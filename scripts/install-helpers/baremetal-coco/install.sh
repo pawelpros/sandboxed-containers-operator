@@ -783,18 +783,24 @@ function uninstall() {
     echo "Uninstalling all the artifacts"
 
     if [ "$TEE_TYPE" = "tdx" ]; then
-        echo "Waiting for MCP to be READY"
-        # If single node OpenShift, then wait for the master MCP to be ready
-        # Else wait for kata-oc MCP to be ready
-        if is_single_node_or_converged_ocp; then
-            echo "SNO or Converged OpenShift"
-            wait_for_mcp master || return 1
-        else
-            wait_for_mcp kata-oc || return 1
-        fi
+        oc get ns intel-dcap &>/dev/null
+        return_code=$?
+        if [ $return_code -eq 0 ]; then
+          echo "Waiting for MCP to be READY"
+          # If single node OpenShift, then wait for the master MCP to be ready
+          # Else wait for kata-oc MCP to be ready
+          if is_single_node_or_converged_ocp; then
+              echo "SNO or Converged OpenShift"
+              wait_for_mcp master || return 1
+          else
+              wait_for_mcp kata-oc || return 1
+          fi
 
-        uninstall_intel_dcap || exit 1
-        uninstall_intel_device_plugins || exit 1
+          uninstall_intel_dcap || exit 1
+          uninstall_intel_device_plugins || exit 1
+        else
+          echo "Intel DCAP & Intel Device Plugins operator not exists"
+        fi
     fi
 
     # Uninstall NFD
@@ -983,6 +989,13 @@ oc apply -f osc-fg-cm.yaml || exit 1
 # Create Layered Image FG ConfigMap
 case $TEE_TYPE in
 tdx)
+    ocp_version=$(oc version --output json | jq '.openshiftVersion')
+    if [[ "$ocp_version" =~ 4\.20.* ]] ;
+    then
+      patched_image="quay.io/bpradipt/rhcos-layer/ocp-4.20:latest-tdx"
+      echo "Patching image layer URL to $patched_image"
+      sed -i "s|^\([[:space:]]*osImageURL:[[:space:]]*\).*|\1\"$patched_image\"|" layeredimage-cm-tdx.yaml
+    fi
     oc apply -f layeredimage-cm-tdx.yaml || exit 1
     ;;
 snp)
