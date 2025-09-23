@@ -376,6 +376,11 @@ function deploy_intel_dcap() {
     oc apply -f pccs.yaml || return 1
     wait_for_deployment pccs intel-dcap || return 1
 
+    # ADD UDS SETUP
+    # oc create sa tdx-qgs-sa -n intel-dcap
+    # oc adm policy add-scc-to-user privileged -z tdx-qgs-sa -n intel-dcap
+    # END ADD UDS SETUP
+
     oc apply -f qgs.yaml || return 1
     wait_for_daemonset tdx-qgs intel-dcap || return 1
     popd || return 1
@@ -465,6 +470,12 @@ function set_kernel_params_for_kata_agent() {
     # Create kata configuration toml override for the kernel_params
     kata_override="[hypervisor.qemu]
 kernel_params=\"$kernel_params\""
+
+    if [ $tee_type = "tdx" ]; then
+      echo "Adding TDX quote generation service socket port 0"
+      kata_override="$kata_override
+tdx_quote_generation_service_socket_port=0"
+    fi
 
     # Create base64 encoding of the drop-in to be used as source
     source=$(echo "$kata_override" | base64 -w0) || return 1
@@ -734,6 +745,10 @@ function uninstall_intel_dcap() {
 
     pushd intel-dcap || return 1
     oc delete -f qgs.yaml || return 1
+    # REMOVE UDS SETUP
+    # oc adm policy remove-scc-from-user privileged -z tdx-qgs-sa -n intel-dcap
+    # oc delete sa tdx-qgs-sa -n intel-dcap
+    # END REMOVE UDS SETUP
     oc delete -f pccs.yaml || return 1
     oc delete secret pccs-secrets -n intel-dcap || return 1
     oc delete -f ns.yaml || return 1
